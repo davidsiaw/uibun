@@ -33,46 +33,66 @@ class Machine
     @dictionary = {}
     @value_stack = []
     @compile_stack = []
-    @compile_mode = false
-
+    @compile_depth = 0
     @depth = 0
+
+    @declarers = {}
+  end
+
+  def compile_mode
+    @compile_depth.nonzero?
   end
 
   def run_token(token)
-    #puts "#{' '*@depth} #{@compile_mode ? 1 : 0} #{token.name}"
+    #puts "#{' '*@depth} #{@compile_depth} #{token.name}"
 
-    return compile(token) if @compile_mode
+    if compile_mode
+      return compile(token)
+    end
     if token.type == :literal || token.type == :number
       return @value_stack.push(token.name)
     end
     return if token.type == :comment
-    return switch_to_compile! if token.type == :declmark
+    return switch_to_compile! if declarer?(token)
 
     execute(token)
   end
 
-  def compile(token)
-    return switch_off_compile! if end_of_compile_unit?(token)
+  def ident_declarer?(token)
+    @declarers.key?(token.name) && token.type == :ident
+  end
 
-    @compile_stack.push(token)
+  def declarer?(token)
+    token.type == :declmark
+  end
+
+  def compile(token)
+    @declarers[value_stack.first] = true if declarer?(token)
+    switch_off_compile! if end_of_compile_unit?(token)
+    switch_to_compile! if ident_declarer?(token)
+
+    @compile_stack.push(token) if compile_mode
   end
 
   def end_of_compile_unit?(token)
-    (token.name == 'です' || token.name == 'で') && token.type != :literal
+    return false if token.type == :literal || token.type == :number
+
+    token.name == 'です' || token.name == 'で'
   end
 
   def switch_to_compile!
-    @compile_mode = true
+    @compile_depth += 1
   end
 
   def switch_off_compile!
-    @compile_mode = false
+    @compile_depth -= 1
+
     name = @value_stack.pop
     @dictionary[name] = {
       type: :method,
       method: @compile_stack
     }
-    @compile_stack = []
+    @compile_stack = [] if @compile_depth == 0
   end
 
   def execute(token)
@@ -215,7 +235,11 @@ class Tokenizer
   def number(word)
     n = ''
     word.split('').each do |x|
-      n += numhash[x]
+      if numhash.key?(x)
+        n += numhash[x]
+      else
+        n += x
+      end
     end
 
     n.to_i
@@ -227,6 +251,7 @@ class Tokenizer
     Token.new(word)
   end
 end
+
 
 source = ARGF.read
 scanner = Scanner.new(source)
@@ -257,6 +282,7 @@ machine.dictionary['改行ヲ書く'] = {
 machine.dictionary['実行する'] = {
   type: :proc,
   proc: lambda do
+    binding.pry
     thing = machine.value_stack.pop
     machine.execute(Token.new(thing))
   end
@@ -290,12 +316,44 @@ machine.dictionary['確認する'] = {
   end
 }
 
+machine.dictionary['参考する'] = {
+  type: :proc,
+  proc: lambda do
+    filename = machine.value_stack.pop
+    s = File.read("#{filename}.uib")
+    sc = Scanner.new(s)
+    tk = Tokenizer.new(sc)
+
+    loop do
+      tok = tk.next_token
+      break if tok.nil?
+
+      machine.run_token(tok)
+      # p machine.compile_stack
+    end
+  end
+}
+
+machine.dictionary['足す'] = {
+  type: :proc,
+  proc: lambda do
+    thing2 = machine.value_stack.pop
+    thing1 = machine.value_stack.pop
+    machine.value_stack.push(thing1 + thing2)
+  end
+}
+
 loop do
   token = tokenizer.next_token
   break if token.nil?
 
   machine.run_token(token)
+  #p machine.value_stack
+  #p machine.dictionary['0func']
+
 rescue => e
   puts "誤り：#{e}"
+  puts e.backtrace
   exit(1)
 end
+
