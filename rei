@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'pry'
@@ -33,24 +34,31 @@ class Machine
     @value_stack = []
     @compile_stack = []
     @compile_mode = false
+
+    @depth = 0
   end
 
   def run_token(token)
+    #puts "#{' '*@depth} #{@compile_mode ? 1 : 0} #{token.name}"
+
     return compile(token) if @compile_mode
     if token.type == :literal || token.type == :number
       return @value_stack.push(token.name)
     end
     return if token.type == :comment
     return switch_to_compile! if token.type == :declmark
-    raise '見知らぬ名義' unless exists?(token)
 
     execute(token)
   end
 
   def compile(token)
-    return switch_off_compile! if token.name == 'です' && token.type != :literal
+    return switch_off_compile! if end_of_compile_unit?(token)
 
     @compile_stack.push(token)
+  end
+
+  def end_of_compile_unit?(token)
+    (token.name == 'です' || token.name == 'で') && token.type != :literal
   end
 
   def switch_to_compile!
@@ -68,9 +76,13 @@ class Machine
   end
 
   def execute(token)
+    raise "見知らぬ名義「#{token.name}」" unless exists?(token)
+    @depth += 1
     entry = @dictionary[token.name]
     return entry[:proc].call if entry[:type] == :proc
     return execute_method(entry[:method]) if entry[:type] == :method
+  ensure
+    @depth -= 1
   end
 
   def execute_method(token_list)
@@ -96,7 +108,7 @@ class Scanner
   end
 
   def notspace?(char)
-    /\s|　|を|と|、/.match(char).nil?
+    /\s|　|を|と|、|に/.match(char).nil?
   end
 
   def rewind!
@@ -187,18 +199,23 @@ class Tokenizer
     tokenize(word)
   end
 
+  def numhash
+    @numhash ||= begin
+      nums = '０１２３４５６７８９'.split ''
+      arr = nums.each_with_index.map { |x, i| [x, i.to_s] }
+      arr += nums.each_with_index.map { |_, i| [i.to_s, i.to_s] }
+      arr.to_h
+    end
+  end
+
   def number?(word)
-    word =~ /\A[0-9０-９]+\Z/
+    word =~ /\A-?[0-9０-９]+\Z/
   end
 
   def number(word)
-    nums = '０１２３４５６７８９'.split ''
-    arr = nums.each_with_index.map { |x, i| [x, i.to_s] }
-    arr += nums.each_with_index.map { |_, i| [i.to_s, i.to_s] }
-    hash = arr.to_h
     n = ''
     word.split('').each do |x|
-      n += hash[x]
+      n += numhash[x]
     end
 
     n.to_i
@@ -230,9 +247,55 @@ machine.dictionary['改行する'] = {
   end
 }
 
+machine.dictionary['改行ヲ書く'] = {
+  type: :proc,
+  proc: lambda do
+    puts
+  end
+}
+
+machine.dictionary['実行する'] = {
+  type: :proc,
+  proc: lambda do
+    thing = machine.value_stack.pop
+    machine.execute(Token.new(thing))
+  end
+}
+
+machine.dictionary['残り'] = {
+  type: :proc,
+  proc: lambda do
+    machine.value_stack.push(machine.value_stack.count)
+  end
+}
+
+machine.dictionary['窟く'] = {
+  type: :proc,
+  proc: lambda do
+    thing2 = machine.value_stack.pop
+    thing1 = machine.value_stack.pop
+    machine.value_stack.push(thing1.to_s + thing2.to_s)
+  end
+}
+
+machine.dictionary['確認する'] = {
+  type: :proc,
+  proc: lambda do
+    thing = machine.value_stack.pop
+    if thing.zero?
+      machine.value_stack.push(0)
+    else
+      machine.value_stack.push(1)
+    end
+  end
+}
+
 loop do
   token = tokenizer.next_token
   break if token.nil?
 
   machine.run_token(token)
+rescue => e
+  puts "誤り：#{e}"
+  exit(1)
 end
