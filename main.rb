@@ -9,6 +9,7 @@ class Token
   end
 
   def type
+    return :number if @raw.is_a? Integer
     return :literal if @raw.start_with? '「'
     return :comment if @raw.start_with? '※'
     return :declmark if @raw.end_with? 'は'
@@ -36,7 +37,9 @@ class Machine
 
   def run_token(token)
     return compile(token) if @compile_mode
-    return @value_stack.push(token.name) if token.type == :literal
+    if token.type == :literal || token.type == :number
+      return @value_stack.push(token.name)
+    end
     return if token.type == :comment
     return switch_to_compile! if token.type == :declmark
     raise '見知らぬ名義' unless exists?(token)
@@ -100,7 +103,7 @@ class Scanner
     @position = 0
   end
 
-  def next_token
+  def next_word
     consume_spaces!
 
     return nil if @position >= @source.length
@@ -171,8 +174,46 @@ class Scanner
   end
 end
 
+# Tokenizer
+class Tokenizer
+  def initialize(scanner)
+    @scanner = scanner
+  end
+
+  def next_token
+    word = @scanner.next_word
+    return nil if word.nil?
+
+    tokenize(word)
+  end
+
+  def number?(word)
+    word =~ /\A[0-9０-９]+\Z/
+  end
+
+  def number(word)
+    nums = '０１２３４５６７８９'.split ''
+    arr = nums.each_with_index.map { |x, i| [x, i.to_s] }
+    arr += nums.each_with_index.map { |_, i| [i.to_s, i.to_s] }
+    hash = arr.to_h
+    n = ''
+    word.split('').each do |x|
+      n += hash[x]
+    end
+
+    n.to_i
+  end
+
+  def tokenize(word)
+    return Token.new(number(word)) if number?(word)
+
+    Token.new(word)
+  end
+end
+
 source = ARGF.read
 scanner = Scanner.new(source)
+tokenizer = Tokenizer.new(scanner)
 machine = Machine.new
 
 machine.dictionary['書く'] = {
@@ -190,9 +231,8 @@ machine.dictionary['改行する'] = {
 }
 
 loop do
-  word = scanner.next_token
-  break if word.nil?
+  token = tokenizer.next_token
+  break if token.nil?
 
-  token = Token.new(word)
   machine.run_token(token)
 end
