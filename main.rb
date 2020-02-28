@@ -10,6 +10,7 @@ class Token
 
   def type
     return :literal if @raw.start_with? '「'
+    return :comment if @raw.start_with? '※'
 
     :ident
   end
@@ -33,6 +34,7 @@ class Machine
 
   def run_token(token)
     return @value_stack.push(token.name) if token.type == :literal
+    return if token.type == :comment
     raise '見知らぬ名義' unless exists?(token)
 
     execute(token)
@@ -61,7 +63,7 @@ class Scanner
   end
 
   def notspace?(char)
-    /\s|　|を|と|は|、/.match(char).nil?
+    /\s|　|を|と|、/.match(char).nil?
   end
 
   def rewind!
@@ -79,8 +81,23 @@ class Scanner
 
     return nil if @position >= @source.length
     return literal if @source[@position] == '「'
+    return comment if @source[@position] == '※'
 
     ident
+  end
+
+  def comment
+    # Consume comment
+    start_pos = @position
+    @position += 1
+    loop do
+      break if @source[@position].nil?
+      break if @source[@position] == '※'
+      @position += 1
+    end
+
+    @position += 1
+    @source[start_pos...@position]
   end
 
   def literal
@@ -117,7 +134,7 @@ machine = Machine.new
 
 machine.dictionary['書く'] = {
   type: :proc,
-  proc: Proc.new do
+  proc: lambda do
     puts machine.value_stack.pop
   end
 }
