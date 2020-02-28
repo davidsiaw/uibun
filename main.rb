@@ -115,7 +115,7 @@ source = ARGF.read
 scanner = Scanner.new(source)
 machine = Machine.new
 
-machine.dictionary['示す'] = {
+machine.dictionary['書く'] = {
   type: :proc,
   proc: Proc.new do
     puts machine.value_stack.pop
