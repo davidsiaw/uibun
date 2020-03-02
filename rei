@@ -282,7 +282,6 @@ machine.dictionary['改行ヲ書く'] = {
 machine.dictionary['実行する'] = {
   type: :proc,
   proc: lambda do
-    binding.pry
     thing = machine.value_stack.pop
     machine.execute(Token.new(thing))
   end
@@ -340,6 +339,20 @@ machine.dictionary['足す'] = {
     thing2 = machine.value_stack.pop
     thing1 = machine.value_stack.pop
     machine.value_stack.push(thing1 + thing2)
+  end
+}
+
+machine.dictionary['話題'] = {
+  type: :proc,
+  proc: lambda do
+    machine.value_stack.push(machine.value_stack.first)
+  end
+}
+
+machine.dictionary['の反対'] = {
+  type: :proc,
+  proc: lambda do
+    machine.value_stack.push(machine.value_stack.first * -1)
   end
 }
 
